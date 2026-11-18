@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Надіслати статус зараз"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -33,11 +38,24 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           TRACK_ID: ${{ secrets.TRACK_ID }}
+          FORCE: ${{ inputs.force }}
         run: python check_once.py
 
       - name: Save state
         run: |
           git config user.name "pfu-bot"
           git config user.email "pfu-bot@users.noreply.github.com"
-          git add state.json 2>/dev/null || true
-          git diff --cached --quiet || (git commit -m "status changed" && git push)
+          [ -f state.json ] || exit 0
+          git status --porcelain state.json | grep -q . || exit 0
+          cp state.json /tmp/state.json
+          for i in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/state.json state.json
+            git add state.json
+            git diff --cached --quiet && exit 0
+            git commit -m "status update"
+            git push && exit 0
+            sleep 5
+          done
+          exit 1
