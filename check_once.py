@@ -62,4 +62,38 @@ def format_status(s, header):
     for i, st in enumerate(s["stages"], 1):
         extra = f" ({st['date']})" if st["date"] and st["state"] != "Очікується" else ""
         lines.append(f"{icons.get(st['state'], '▫️')} {i}. {st['name']} — {st['state'] or '?'}{extra}")
-    li
+    lines += ["", f'<a href="{URL}">Відкрити на порталі</a>']
+    return "\n".join(lines)
+
+
+HOURLY = 55 * 60  # щогодинний звіт (55 хв — запас на затримки GitHub)
+
+
+def main():
+    s = fetch_status()
+    fp = fingerprint(s)
+    st = json.loads(STATE.read_text()) if STATE.exists() else {}
+    last, last_sent = st.get("fp"), st.get("last_sent", 0)
+    now = time.time()
+
+    if last is None:
+        header = "👀 Почав стежити."
+    elif fp != last:
+        header = "🔔 <b>Статус змінився!</b>"
+    elif now - last_sent >= HOURLY or os.getenv("FORCE") == "true":
+        header = "🕐 Щогодинний статус (без змін)"
+    else:
+        header = None
+
+    if header:
+        r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                          json={"chat_id": CHAT_ID, "text": format_status(s, header),
+                                "parse_mode": "HTML", "disable_web_page_preview": True},
+                          timeout=30)
+        r.raise_for_status()
+        STATE.write_text(json.dumps({"fp": fp, "last_sent": int(now)}))
+    print("Статус:", s["status"], "| надіслано" if header else "| без змін")
+
+
+if __name__ == "__main__":
+    main()
